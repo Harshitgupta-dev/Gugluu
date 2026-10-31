@@ -1,0 +1,29 @@
+#pragma once
+
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+#include <ctime>
+#include <iomanip>
+#include <limits>
+#include <unordered_set>
+#include <numeric>
+#include <sstream>
+#include <system_error>
+
+#include "Gugluu/src/Constants.h"
+#include "Gugluu/src/DataStructureDefinitions.h"
+#include "Gugluu/Vendor/ONNX/include/onnxruntime_cxx_api.h"
+#include "Gugluu/src/Macros.h"

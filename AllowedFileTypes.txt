@@ -1,0 +1,13 @@
+.h
+.hpp
+.c
+.cpp
+.py
+.js
+.java
+.txt
+.md
+.json
+.xml
+.css
+.html
