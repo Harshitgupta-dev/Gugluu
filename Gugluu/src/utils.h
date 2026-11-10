@@ -86,6 +86,17 @@ namespace UtilsGugluu
         return lowercased;
     }
 
+    inline std::string& ToLowerCase(std::string& a_String)
+    {
+        std::transform(a_String.begin(), a_String.end(), a_String.begin(),
+            [](unsigned char a_Character)
+            {
+                return static_cast<char>(std::tolower(a_Character));
+            });
+
+        return a_String;
+    }
+
     inline void NormalizeWhitespace(std::string& a_String)
     {
         std::string normalized;
