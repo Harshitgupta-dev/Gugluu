@@ -43,37 +43,7 @@ The setup script downloads and SHA-256 verifies:
 
 ## Setup and build
 
-From the build folder run Build.bat or Build.sh according to the system you are building the project for. 
-
-This batch file:
-
-1. Runs `python scripts\setup_dependencies.py`.
-2. Downloads and verifies missing model and ONNX Runtime assets.
-3. Runs the bundled Premake executable.
-4. Generates the Visual Studio solution for Visual Studio 2026.
-
-Then open `Gugluu.sln`, choose the `x64` platform and `Debug` or `Release`, and build the `Gugluu` project or solution.
-
-You can also generate and verify dependencies manually:
-
-```bat
-python scripts\setup_dependencies.py
-python scripts\setup_dependencies.py --check
-```
-
-Or build the generated solution from a Developer Command Prompt:
-
-```bat
-msbuild Gugluu.sln /m /p:Configuration=Release /p:Platform=x64
-```
-
-Build output:
-
-```text
-Bin\Release-windows-x86_64\Gugluu\Gugluu.exe
-```
-
-Use `Debug-windows-x86_64` for a Debug build.
+From the build folder run Build.bat or Build.sh according to the system you are building the project for. This will provide you with project files according to your system like .slnx if u choose visual studio.
 
 ## Run Gugluu
 
