@@ -28,3 +28,37 @@ Build/dependencies/
 
 # Keep local index caches out of source control.
 *.gdata
+
+# === Generated Project Files (Cross-Platform) ===
+Makefile
+*.make
+*.xcworkspace/
+*.xcodeproj/
+compile_commands.json
+
+# === Platform Build Outputs ===
+*.exe
+*.app/
+*.dylib
+*.so
+*.a
+*.o
+*.obj
+*.lib
+*.exp
+
+# === Python and Dependency Setup ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+Build/Dependencies/
+
+# === macOS and Linux Editor/OS Artifacts ===
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

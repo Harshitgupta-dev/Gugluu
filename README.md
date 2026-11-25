@@ -1,48 +1,172 @@
-# Gugluu
+# Gugluu 0.2.0
 
-Gugluu is a command-line semantic search application. It scans a directory for supported files, tokenizes their contents, generates embeddings with the `all-MiniLM-L6-v2` ONNX model, and uses FAISS to find relevant files. Supported file extensions are configured in `AllowedFileTypes.txt`.
+Gugluu 0.2.0 is a native Windows 64-bit, console-based semantic file search engine written in C++20.
 
-## Generate a project
+It recursively indexes files in a selected directory, generates sentence embeddings with the `all-MiniLM-L6-v2` ONNX model, and ranks matching files with cosine similarity. Gugluu uses a custom BERT WordPiece tokenizer and ONNX Runtime; it is not a keyword-only search implementation.
 
-Run the launcher from the repository root. It checks and prepares the required dependencies, asks which project format to generate, then stops; it does not compile Gugluu or create an executable.
+## What Gugluu does
 
-```text
-Build/build.bat
-```
+1. Accepts a directory to index as a command-line argument or prompts for one.
+2. Recursively scans regular files and supported symlinks.
+3. Reads file text and filters files by extensions in `AllowedFileTypes.txt`.
+4. Splits text into 256-token chunks and creates a 384-dimensional embedding for each chunk.
+5. Prompts for a search query and creates an embedding for it.
+6. Computes cosine similarity with each indexed file's averaged embedding.
+7. Prints the highest-ranked files, up to 10 results.
 
-```sh
-sh Build/build.sh
-```
-
-On Windows, choose Visual Studio 2026 to generate `Gugluu.slnx` (and the Premake Visual Studio project) in the repository root, or choose another listed generator. The Visual Studio 2022 option generates `Gugluu.sln`. You can also choose a generator without a prompt, for example `Build/build.bat vs2026` or `sh Build/build.sh gmake2`.
-
-The setup script downloads and verifies ONNX Runtime and the model/tokenizer, and checks the vendored spdlog headers and staged FAISS/OpenBLAS libraries. It builds FAISS and OpenBLAS only when their staged artifacts are missing or stale; that recovery path uses CMake and requires a C++ toolchain. Premake project generation itself does not use CMake. Premake is downloaded automatically if it is not already installed.
-
-The generated project uses the existing `Gugluu/Vendor` dependency layout and writes generated project files to the repository root. Build Gugluu later from the generated project using the selected editor/build system. The executable, when built, is placed in `Bin/<Configuration>-<System>-<Architecture>/Gugluu`.
-
-Supported ONNX Runtime targets are Windows x64, Linux x64/ARM64, and Apple Silicon macOS. FAISS uses OpenMP; install a compatible OpenMP runtime when it is not included with the compiler, particularly on macOS.
-
-## Run
-
-Run the generated `Gugluu` executable from its `Bin` output folder, choose a directory to index, then enter search queries. Type `exit` to quit. The model, tokenizer, allowed-file-types list, and linked libraries are read from their existing locations under the repository; build outputs do not duplicate them. On Windows, launch through Visual Studio to get the configured ONNX Runtime library path, or add `Gugluu/Vendor/ONNX/lib` to `PATH` before launching the executable directly. The index is stored as `Data.gdata` next to the executable. Supported extensions are listed in `AllowedFileTypes.txt`.
-
-## Repository layout
+## Project structure
 
 ```text
-Build/build.bat and Build/build.sh   Dependency setup and project generation
-premake5.lua                         Gugluu application project definition
-scripts/setup_dependencies.py        Dependency checks/downloads and project generation
-Gugluu/src/                           Application source
-Gugluu/Vendor/spdlog/                 Vendored logging library
-Gugluu/Vendor/FAISS/                  Configuration-specific FAISS libraries and headers
-Gugluu/Vendor/openBLAS/               Configuration-specific OpenBLAS libraries and headers
-Gugluu/Vendor/ONNX/                   Downloaded ONNX Runtime
-Gugluu/Vendor/Model/                  Downloaded model/tokenizer assets
-vendor/bin/                           Cached Premake executable
-Build/                                Dependency download and FAISS/OpenBLAS build cache
-  faiss-int/                           FAISS CMake intermediate files
-  openblas-int/                        OpenBLAS CMake intermediate files
-Bin/                                  Executables and debug symbols only
+Gugluu-0.2.0 - Copy/
+├── Gugluu/
+│   ├── src/
+│   │   ├── Source.cpp              # Application entry point
+│   │   ├── DataLoader.cpp/.h       # File discovery, cache, and allowed extensions
+│   │   ├── FileRecord.cpp/.h       # Per-file text, metadata, and embeddings
+│   │   ├── Embedding.h             # Chunk pooling and embedding normalization
+│   │   ├── similarity.h            # Cosine-similarity ranking
+│   │   ├── ui.h                    # Console prompts and result output
+│   │   ├── Tokenizer/              # Custom BERT WordPiece tokenizer
+│   │   └── ONNX/                   # ONNX Runtime model session
+│   └── Vendor/                     # Downloaded ONNX Runtime and model files
+├── scripts/
+│   └── setup_dependencies.py      # Verified dependency setup and restore
+├── Build/                          # Dependency build/download workspace
+├── AllowedFileTypes.txt            # Indexed file extensions
+├── GenerateProjectVS.bat           # Dependency setup and Visual Studio generation
+├── premake5.lua                    # Visual Studio project generation config
+└── Gugluu.sln                      # Generated Visual Studio solution
 ```
 
-Generated builds, staged dependencies, downloaded assets, and local index files are excluded by `.gitignore`.
+`Gugluu.sln`, Visual Studio project files, the `Vendor` directory, build output, DLLs, and `.gdata` caches are local/generated assets and are not expected to be committed.
+
+## Requirements
+
+- Windows 10 or later, on x64
+- Visual Studio 2026
+- The **Desktop development with C++** workload
+- MSVC C++ toolset v145
+- Python 3.8 or later
+- Internet access for the first dependency setup
+
+The setup script downloads and SHA-256 verifies:
+
+- ONNX Runtime 1.31.1 for Windows x64
+- `all-MiniLM-L6-v2/model.onnx`
+- The matching vocabulary and tokenizer assets
+
+## Setup and build
+
+From the repository root, run:
+
+```bat
+GenerateProjectVS.bat
+```
+
+This batch file:
+
+1. Runs `python scripts\setup_dependencies.py`.
+2. Downloads and verifies missing model and ONNX Runtime assets.
+3. Runs the bundled Premake executable.
+4. Generates the Visual Studio solution for Visual Studio 2026.
+
+Then open `Gugluu.sln`, choose the `x64` platform and `Debug` or `Release`, and build the `Gugluu` project or solution.
+
+You can also generate and verify dependencies manually:
+
+```bat
+python scripts\setup_dependencies.py
+python scripts\setup_dependencies.py --check
+```
+
+Or build the generated solution from a Developer Command Prompt:
+
+```bat
+msbuild Gugluu.sln /m /p:Configuration=Release /p:Platform=x64
+```
+
+Build output:
+
+```text
+Bin\Release-windows-x86_64\Gugluu\Gugluu.exe
+```
+
+Use `Debug-windows-x86_64` for a Debug build.
+
+## Run Gugluu
+
+Pass a directory as the first argument:
+
+```bat
+Bin\Release-windows-x86_64\Gugluu\Gugluu.exe "C:\path\to\folder"
+```
+
+You may also run it without arguments and enter the directory when prompted:
+
+```text
+Directory to index: C:\path\to\folder
+Search: find notes about databases
+Indexing files...
+Top 10 matches:
+C:\path\to\folder\database-notes.txt (score: 0.873412)
+C:\path\to\folder\overview.md (score: 0.724891)
+Searched 42 files.
+Completed in 1250 ms.
+```
+
+Only one directory argument is accepted. Running with more than one argument exits with a usage error.
+
+## Indexed file types
+
+`AllowedFileTypes.txt` controls extension filtering. The default configuration includes source code, text, Markdown, JSON, XML, CSS, and HTML files:
+
+```text
+.h
+.hpp
+.c
+.cpp
+.py
+.js
+.java
+.txt
+.md
+.json
+.xml
+.css
+.html
+```
+
+Each configured extension must start with `.` and contain only letters, digits, `_`, or `-`. Lines beginning with `#` are ignored.
+
+## Embedding and cache behavior
+
+Gugluu chunks text into sequences of up to 256 tokens. It averages valid token vectors for each chunk, normalizes each chunk, averages the chunk embeddings for a file, and normalizes the final file embedding.
+
+The 384-dimensional query embedding is compared directly against cached or newly generated file embeddings using dot-product/cosine similarity.
+
+The persisted cache is written beside the running executable as:
+
+```text
+Data.gdata
+```
+
+The cache stores file paths, file sizes, modification times, IDs, and embeddings. Gugluu reloads it, re-embeds files whose size or modification time changed, removes entries for missing files during a complete scan, and rewrites the cache after indexing.
+
+Delete `Data.gdata` to force a fresh index. If the cache reports an invalid format or invalid embeddings, delete it and rerun Gugluu.
+
+## Troubleshooting
+
+- Run `python scripts\setup_dependencies.py --check` to verify model and ONNX Runtime assets without downloading them.
+- Run `GenerateProjectVS.bat` again if `Gugluu.sln` or project files are missing or stale.
+- Build for **x64**; Gugluu's ONNX Runtime dependency is Windows x64.
+- Ensure `AllowedFileTypes.txt`, `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `model.onnx`, and `vocab.txt` are available beside or relative to the executable.
+- If a directory cannot be indexed, confirm that the path is a valid directory and accessible to the process.
+- If the first run is slow, allow time for the initial file embedding pass and model startup.
+
+## Core technologies
+
+- C++20
+- Premake 5
+- ONNX Runtime 1.31.1
+- `sentence-transformers/all-MiniLM-L6-v2`
+- Microsoft Visual C++ / MSBuild

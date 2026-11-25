@@ -109,19 +109,26 @@ debugdir "Gugluu"
 
     filter "system:windows"
         links { "onnxruntime" }
-        linkoptions { '/IMPLIB:"Build/Premake/obj/%{cfg.buildcfg}-%{cfg.system}-' .. host_architecture .. '/Gugluu.lib"' }
         debugenvs { "PATH=" .. path.getabsolute("Gugluu/Vendor/ONNX/lib") .. ";%PATH%" }
         postbuildcommands {
             '{COPY} "%{prj.location}/Vendor/ONNX/lib/onnxruntime.dll" "%{cfg.targetdir}"',
             '{COPY} "%{prj.location}/Vendor/ONNX/lib/onnxruntime_providers_shared.dll" "%{cfg.targetdir}"',
         }
 
-    -- filter "system:linux"
-    --     links { "onnxruntime" }
-    --     debugenvs { "LD_LIBRARY_PATH=Gugluu/Vendor/ONNX/lib:$LD_LIBRARY_PATH" }
+    filter "system:linux"
+        links { "onnxruntime" }
+        debugenvs { "LD_LIBRARY_PATH=" .. path.getabsolute("Gugluu/Vendor/ONNX/lib") .. ":$LD_LIBRARY_PATH" }
+        postbuildcommands {
+            '{COPY} "%{prj.location}/Vendor/ONNX/lib/libonnxruntime.so" "%{cfg.targetdir}"',
+            '{COPY} "%{prj.location}/Vendor/ONNX/lib/libonnxruntime_providers_shared.so" "%{cfg.targetdir}"',
+        }
 
-    -- filter "system:macosx"
-    --     links { "onnxruntime" }
-    --     debugenvs { "DYLD_LIBRARY_PATH=Gugluu/Vendor/ONNX/lib:$DYLD_LIBRARY_PATH" }
+    filter "system:macosx"
+        links { "onnxruntime" }
+        debugenvs { "DYLD_LIBRARY_PATH=" .. path.getabsolute("Gugluu/Vendor/ONNX/lib") .. ":$DYLD_LIBRARY_PATH" }
+        postbuildcommands {
+            '{COPY} "%{prj.location}/Vendor/ONNX/lib/libonnxruntime.dylib" "%{cfg.targetdir}"',
+            '{COPY} "%{prj.location}/Vendor/ONNX/lib/libonnxruntime_providers_shared.dylib" "%{cfg.targetdir}"',
+        }
 
     filter {}

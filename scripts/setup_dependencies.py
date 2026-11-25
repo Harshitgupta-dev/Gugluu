@@ -55,6 +55,14 @@ ONNX_PLATFORMS = {
             "onnxruntime_providers_shared.dll",
         ],
     ),
+    ("Windows", "aarch64"): (
+        "win-arm64",
+        [
+            "onnxruntime.dll",
+            "onnxruntime.lib",
+            "onnxruntime_providers_shared.dll",
+        ],
+    ),
     ("Linux", "x86_64"): (
         "linux-x64",
         [
@@ -71,6 +79,13 @@ ONNX_PLATFORMS = {
     ),
     ("Darwin", "arm64"): (
         "osx-arm64",
+        [
+            "libonnxruntime.dylib",
+            "libonnxruntime_providers_shared.dylib",
+        ],
+    ),
+    ("Darwin", "x86_64"): (
+        "osx-x64",
         [
             "libonnxruntime.dylib",
             "libonnxruntime_providers_shared.dylib",
@@ -364,9 +379,16 @@ def ensure_runtime_assets(system: str, arch: str) -> None:
         "onnxruntime_cxx_inline.h",
     ]
 
+    api_header = include_dir / "onnxruntime_c_api.h"
+    api_header_matches = (
+        api_header.is_file()
+        and "#define ORT_API_VERSION 31" in api_header.read_text(encoding="utf-8")
+    )
+
     if (
         version_file.is_file()
         and version_file.read_text(encoding="utf-8").strip() == ONNX_VERSION
+        and api_header_matches
         and all((include_dir / name).is_file() for name in include_files)
         and all((lib_dir / name).is_file() for name in runtime_files)
     ):
