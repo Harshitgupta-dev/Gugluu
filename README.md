@@ -139,6 +139,4 @@ The `Data.gdata` index cache is stored beside the executable. It is a regenerabl
 ## Current limitations
 
 - Search and indexing run in one console process; there is no background watcher or interactive multi-query session.
-- The current tokenizer is byte-oriented and is not a complete Unicode BERT tokenizer.
 - The cache format is application-specific and has no migration mechanism yet.
-- Search results are ranked against an average normalized file embedding, so very long files are represented coarsely.
