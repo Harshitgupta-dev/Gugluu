@@ -17,51 +17,33 @@ It recursively indexes files in a selected directory, generates sentence embeddi
 ## Project structure
 
 ```text
-Gugluu-0.2.0 - Copy/
+Gugluu
+│
 ├── Gugluu/
 │   ├── src/
-│   │   ├── Source.cpp              # Application entry point
-│   │   ├── DataLoader.cpp/.h       # File discovery, cache, and allowed extensions
-│   │   ├── FileRecord.cpp/.h       # Per-file text, metadata, and embeddings
-│   │   ├── Embedding.h             # Chunk pooling and embedding normalization
-│   │   ├── similarity.h            # Cosine-similarity ranking
-│   │   ├── ui.h                    # Console prompts and result output
-│   │   ├── Tokenizer/              # Custom BERT WordPiece tokenizer
-│   │   └── ONNX/                   # ONNX Runtime model session
-│   └── Vendor/                     # Downloaded ONNX Runtime and model files
+│   └── Vendor/ 
+│                    
 ├── scripts/
-│   └── setup_dependencies.py      # Verified dependency setup and restore
-├── Build/                          # Dependency build/download workspace
-├── AllowedFileTypes.txt            # Indexed file extensions
-├── GenerateProjectVS.bat           # Dependency setup and Visual Studio generation
-├── premake5.lua                    # Visual Studio project generation config
-└── Gugluu.sln                      # Generated Visual Studio solution
+│   └── setup_dependencies.py 
+│    
+├── Build/
+│
+├── AllowedFileTypes.txt
+├── premake5.lua
+│
+└── vendor/bin/premake 
 ```
-
-`Gugluu.sln`, Visual Studio project files, the `Vendor` directory, build output, DLLs, and `.gdata` caches are local/generated assets and are not expected to be committed.
-
-## Requirements
-
-- Windows 10 or later, on x64
-- Visual Studio 2026
-- The **Desktop development with C++** workload
-- MSVC C++ toolset v145
-- Python 3.8 or later
-- Internet access for the first dependency setup
-
 The setup script downloads and SHA-256 verifies:
 
 - ONNX Runtime 1.31.1 for Windows x64
 - `all-MiniLM-L6-v2/model.onnx`
 - The matching vocabulary and tokenizer assets
+- Installs and build FAISS and openBLAS used in program
+- installs logging library spdlog
 
 ## Setup and build
 
-From the repository root, run:
-
-```bat
-GenerateProjectVS.bat
-```
+From the build folder run Build.bat or Build.sh according to the system you are building the project for. 
 
 This batch file:
 
@@ -138,12 +120,10 @@ Only one directory argument is accepted. Running with more than one argument exi
 
 Each configured extension must start with `.` and contain only letters, digits, `_`, or `-`. Lines beginning with `#` are ignored.
 
-## Embedding and cache behavior
+## Embeddings
+Files are break into chunks of 256 tokens and then converted into 384 dimensional vector as embeddings. then cosine similarity is used and most relevant files are found by considering the similarity of those chunks to the query ranking them.
 
-Gugluu chunks text into sequences of up to 256 tokens. It averages valid token vectors for each chunk, normalizes each chunk, averages the chunk embeddings for a file, and normalizes the final file embedding.
-
-The 384-dimensional query embedding is compared directly against cached or newly generated file embeddings using dot-product/cosine similarity.
-
+## Cache behavior
 The persisted cache is written beside the running executable as:
 
 ```text
@@ -153,20 +133,3 @@ Data.gdata
 The cache stores file paths, file sizes, modification times, IDs, and embeddings. Gugluu reloads it, re-embeds files whose size or modification time changed, removes entries for missing files during a complete scan, and rewrites the cache after indexing.
 
 Delete `Data.gdata` to force a fresh index. If the cache reports an invalid format or invalid embeddings, delete it and rerun Gugluu.
-
-## Troubleshooting
-
-- Run `python scripts\setup_dependencies.py --check` to verify model and ONNX Runtime assets without downloading them.
-- Run `GenerateProjectVS.bat` again if `Gugluu.sln` or project files are missing or stale.
-- Build for **x64**; Gugluu's ONNX Runtime dependency is Windows x64.
-- Ensure `AllowedFileTypes.txt`, `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `model.onnx`, and `vocab.txt` are available beside or relative to the executable.
-- If a directory cannot be indexed, confirm that the path is a valid directory and accessible to the process.
-- If the first run is slow, allow time for the initial file embedding pass and model startup.
-
-## Core technologies
-
-- C++20
-- Premake 5
-- ONNX Runtime 1.31.1
-- `sentence-transformers/all-MiniLM-L6-v2`
-- Microsoft Visual C++ / MSBuild
