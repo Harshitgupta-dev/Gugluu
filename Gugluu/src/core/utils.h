@@ -8,31 +8,83 @@
 #include <system_error>
 #include <vector>
 
+#ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <Windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace UtilsGugluu
 {
     inline std::filesystem::path ApplicationDirectory()
     {
-        std::vector<wchar_t> executablePath(32768);
+#ifdef _WIN32
+        std::vector<wchar_t> c_ExecutablePathBuffer(32768);
         const DWORD c_PathLength = GetModuleFileNameW(
             nullptr,
-            executablePath.data(),
-            static_cast<DWORD>(executablePath.size()));
+            c_ExecutablePathBuffer.data(),
+            static_cast<DWORD>(c_ExecutablePathBuffer.size()));
 
-        if (c_PathLength == 0 || c_PathLength >= executablePath.size())
-            throw std::system_error(
-                static_cast<int>(GetLastError()),
-                std::system_category(),
-                "Unable to determine Gugluu's executable path");
+        GUGLUU_ASSERT(
+            c_PathLength != 0 && c_PathLength < c_ExecutablePathBuffer.size(),
+            "Unable to determine Gugluu's executable path (Windows error "
+            << GetLastError() << ").");
 
-        executablePath.resize(c_PathLength);
+        c_ExecutablePathBuffer.resize(c_PathLength);
         const std::wstring c_ExecutablePath(
-            executablePath.begin(), executablePath.end());
+            c_ExecutablePathBuffer.begin(), c_ExecutablePathBuffer.end());
         return std::filesystem::path(c_ExecutablePath).parent_path();
+#elif defined(__APPLE__)
+        std::uint32_t c_PathLength = 1024;
+        std::vector<char> c_ExecutablePath(c_PathLength);
+        int c_Result = _NSGetExecutablePath(
+            c_ExecutablePath.data(), &c_PathLength);
+        if (c_Result != 0)
+        {
+            GUGLUU_ASSERT(
+                c_PathLength > c_ExecutablePath.size(),
+                "Unable to determine Gugluu's executable path size.");
+            c_ExecutablePath.resize(c_PathLength);
+            c_Result = _NSGetExecutablePath(
+                c_ExecutablePath.data(), &c_PathLength);
+        }
+
+        GUGLUU_ASSERT(
+            c_Result == 0,
+            "Unable to determine Gugluu's executable path.");
+        return std::filesystem::weakly_canonical(
+            std::filesystem::path(c_ExecutablePath.data())).parent_path();
+#else
+        std::vector<char> c_ExecutablePath(256);
+        while (true)
+        {
+            const ssize_t c_PathLength = readlink(
+                "/proc/self/exe",
+                c_ExecutablePath.data(),
+                c_ExecutablePath.size());
+            GUGLUU_ASSERT(
+                c_PathLength >= 0,
+                "Unable to determine Gugluu's executable path.");
+
+            if (static_cast<std::size_t>(c_PathLength) < c_ExecutablePath.size())
+            {
+                c_ExecutablePath.resize(static_cast<std::size_t>(c_PathLength));
+                return std::filesystem::path(
+                    std::string(c_ExecutablePath.begin(), c_ExecutablePath.end()))
+                    .parent_path();
+            }
+
+            GUGLUU_ASSERT(
+                c_ExecutablePath.size() <= 1024 * 1024,
+                "Executable path exceeds the supported length.");
+            c_ExecutablePath.resize(c_ExecutablePath.size() * 2);
+        }
+#endif
     }
 
     inline std::filesystem::path WorkspacePath(
@@ -52,9 +104,10 @@ namespace UtilsGugluu
                 break;
         }
 
-        throw std::runtime_error(
+        GUGLUU_ASSERT(
+            false,
             "Unable to locate the Gugluu workspace from working directory: "
-            + c_CurrentPath.string());
+            << c_CurrentPath.string());
     }
 
     inline std::filesystem::path ResourcePath(

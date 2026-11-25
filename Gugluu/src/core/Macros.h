@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "Gugluu/src/core/Log.h"
+
 #define PRINT(a_Message) \
     do { std::cout << a_Message << '\n'; } while (false)
 
@@ -15,11 +17,13 @@
     { \
         if (!(a_Condition)) \
         { \
-            std::ostringstream gugluu_assert_message; \
-            gugluu_assert_message << a_Message; \
-            throw std::runtime_error( \
+            std::ostringstream gugluu_assert_message_stream; \
+            gugluu_assert_message_stream << a_Message; \
+            const std::string gugluu_assert_message = \
                 std::string("Assertion failed: ") + #a_Condition + ": " + \
-                gugluu_assert_message.str()); \
+                gugluu_assert_message_stream.str(); \
+            LOG_ERROR("{}", gugluu_assert_message); \
+            throw std::runtime_error(gugluu_assert_message); \
         } \
     } while (false)
 
