@@ -1,250 +1,456 @@
-#include "Gugluu/src/pch.h"
+#include "Gugluu/src/core/pch.h"
 #include "Gugluu/src/Tokenizer/Tokenizer.h"
-#include "Gugluu/src/utils.h"
 
-Tokenizer::Tokenizer(const std::filesystem::path& a_FilePath)
+
+Tokenizer::Tokenizer(
+	const std::filesystem::path& a_FilePath)
 {
 	LoadVocab(a_FilePath);
 }
 
-void Tokenizer::LoadVocab(const std::filesystem::path& a_FilePath)
+
+void Tokenizer::LoadVocab(
+	const std::filesystem::path& a_FilePath)
 {
 	std::ifstream vocab(a_FilePath);
 
-	GUGLUU_ASSERT(vocab.is_open(), "Failed to load vocabulary file: " << a_FilePath.string());
+	GUGLUU_ASSERT(
+		vocab.is_open(),
+		"Failed to load vocabulary file: "
+		<< a_FilePath.string());
+
 
 	std::string line;
-	int64_t index = 0;
+	std::int64_t index = 0;
 
 	while (std::getline(vocab, line))
-		m_Vocabulary[line] = index++;
-
-	GUGLUU_ASSERT(!m_Vocabulary.empty(), "The vocabulary file is empty.");
-}
-
-TokenizedText Tokenizer::TokenizeText(
-	const std::string& a_InputString)
-{
-	// Normalize
-	const std::string c_Normalized = Normalize(a_InputString);
-
-	// BERT pre-tokenization
-	std::vector<std::string> preTokenized =
-		PreTokenize(c_Normalized);
-
-	// WordPiece tokenization
-	std::vector<std::string> wordPieceTokenized;
-
-	for (const auto& word : preTokenized)
 	{
-		std::vector<std::string> tokens =
-			WordPieceTokenize(word);
-
-		wordPieceTokenized.insert(
-			wordPieceTokenized.end(),
-			tokens.begin(),
-			tokens.end()
-		);
+		GUGLUU_ASSERT(
+			!line.empty(),
+			"The vocabulary contains an empty token.");
+		GUGLUU_ASSERT(
+			m_Vocabulary.emplace(std::move(line), index++).second,
+			"The vocabulary contains a duplicate token.");
 	}
 
-	// Convert vocabulary tokens into IDs
-	const std::vector<std::int64_t> c_Tokenized =
-		ConvertToIds(wordPieceTokenized);
+	GUGLUU_ASSERT(!vocab.bad(), "Failed while reading the vocabulary file.");
+	GUGLUU_ASSERT(
+		!m_Vocabulary.empty(),
+		"The vocabulary is empty.");
 
-	// Chunk, add special tokens and pad
-	auto chunks = Chunker(c_Tokenized);
-	return chunks;
+
+	auto clsIterator =
+		m_Vocabulary.find("[CLS]");
+
+	auto sepIterator =
+		m_Vocabulary.find("[SEP]");
+
+	auto padIterator =
+		m_Vocabulary.find("[PAD]");
+
+	auto unknownIterator =
+		m_Vocabulary.find("[UNK]");
+
+	GUGLUU_ASSERT(
+		clsIterator != m_Vocabulary.end() &&
+		sepIterator != m_Vocabulary.end() &&
+		padIterator != m_Vocabulary.end() &&
+		unknownIterator != m_Vocabulary.end(),
+		"The vocabulary is missing a required special token.");
+
+
+	m_CLSId = clsIterator->second;
+	m_SEPId = sepIterator->second;
+	m_PADId = padIterator->second;
 }
 
-std::string Tokenizer::Normalize(
-	const std::string& a_InputString)
+
+TokenizedText Tokenizer::TokenizeText(
+	std::string& a_InputString)
 {
-	std::string normalized = UtilsGugluu::ToLowerCase(a_InputString);
-	UtilsGugluu::NormalizeWhitespace(normalized);
-	return normalized;
+	Normalize(a_InputString);
+
+	std::vector<std::string> preTokens =
+		PreTokenize(a_InputString);
+
+
+	std::vector<std::string> tokens;
+
+	tokens.reserve(
+		preTokens.size() * 2);
+
+
+	for (const std::string& token : preTokens)
+	{
+		if (token == "\n")
+		{
+			tokens.emplace_back("\n");
+			continue;
+		}
+
+
+		WordPieceTokenize(
+			token,
+			tokens);
+	}
+
+
+	TokenizedText result;
+
+	ChunkAndConvert(
+		tokens,
+		result);
+
+	const std::size_t c_SequenceLength =
+		GugluuConstants::c_MaxSequenceLength;
+
+	GUGLUU_ASSERT(
+		result.InputIds.size() == result.AttentionMask.size()
+		&& result.InputIds.size() % c_SequenceLength == 0,
+		"Tokenized input has an invalid shape.");
+
+	return result;
 }
+
+
+void Tokenizer::Normalize(
+	std::string& a_InputString)
+{
+	std::string normalized;
+
+	normalized.reserve(
+		a_InputString.size());
+
+
+	bool previousWasNewline = false;
+
+
+	for (unsigned char c : a_InputString)
+	{
+		if (c == '\n')
+		{
+			if (!previousWasNewline)
+			{
+				normalized.push_back('\n');
+				previousWasNewline = true;
+			}
+
+			continue;
+		}
+
+
+		previousWasNewline = false;
+
+
+		if (std::isspace(c))
+		{
+			if (!normalized.empty() &&
+				normalized.back() != ' ' &&
+				normalized.back() != '\n')
+			{
+				normalized.push_back(' ');
+			}
+
+			continue;
+		}
+
+
+		normalized.push_back(
+			static_cast<char>(
+				std::tolower(c)));
+	}
+
+
+	a_InputString = std::move(normalized);
+}
+
 
 std::vector<std::string> Tokenizer::PreTokenize(
 	const std::string& a_InputString)
 {
-	std::vector<std::string> stringVector;
+	std::vector<std::string> tokens;
+
+	tokens.reserve(
+		a_InputString.size() / 4 + 1);
+
+
 	std::string currentToken;
+
+	currentToken.reserve(32);
+
 
 	for (unsigned char c : a_InputString)
 	{
+		if (c == '\n')
+		{
+			if (!currentToken.empty())
+			{
+				tokens.emplace_back(
+					std::move(currentToken));
+
+				currentToken.clear();
+			}
+
+			tokens.emplace_back("\n");
+
+			continue;
+		}
+
+
 		if (std::isspace(c))
 		{
 			if (!currentToken.empty())
 			{
-				stringVector.emplace_back(currentToken);
+				tokens.emplace_back(
+					std::move(currentToken));
+
 				currentToken.clear();
 			}
+
+			continue;
 		}
-		else if (std::ispunct(c))
+
+
+		if (std::ispunct(c))
 		{
 			if (!currentToken.empty())
 			{
-				stringVector.emplace_back(currentToken);
+				tokens.emplace_back(
+					std::move(currentToken));
+
 				currentToken.clear();
 			}
 
-			stringVector.emplace_back(std::string(1, c));
+
+			tokens.emplace_back(
+				1,
+				static_cast<char>(c));
+
+			continue;
 		}
-		else
-		{
-			currentToken.push_back(c);
-		}
+
+
+		currentToken.push_back(
+			static_cast<char>(c));
 	}
+
 
 	if (!currentToken.empty())
 	{
-		stringVector.emplace_back(currentToken);
+		tokens.emplace_back(
+			std::move(currentToken));
 	}
 
-	return stringVector;
-}
-
-std::vector<std::string> Tokenizer::WordPieceTokenize(
-	const std::string& a_Word)
-{
-	std::vector<std::string> tokens;
-
-	if (a_Word.empty())
-		return tokens;
-
-	// BERT WordPiece maximum character limit
-	if (a_Word.length() > GugluuConstants::c_MaxTokenCharacters)
-	{
-		tokens.emplace_back("[UNK]");
-		return tokens;
-	}
-
-	// Whole word exists in vocabulary
-	if (m_Vocabulary.contains(a_Word))
-	{
-		tokens.emplace_back(a_Word);
-		return tokens;
-	}
-
-	size_t start = 0;
-
-	while (start < a_Word.length())
-	{
-		size_t end = a_Word.length();
-
-		std::string currentToken;
-		bool found = false;
-
-		// Greedy longest-match-first
-		while (start < end)
-		{
-			std::string piece =
-				a_Word.substr(start, end - start);
-
-			// Continuation pieces require ##
-			if (start != 0)
-				piece = "##" + piece;
-
-			if (m_Vocabulary.contains(piece))
-			{
-				currentToken = piece;
-				found = true;
-				break;
-			}
-
-			--end;
-		}
-
-		// Word cannot be represented by vocabulary
-		if (!found)
-		{
-			return { "[UNK]" };
-		}
-
-		tokens.emplace_back(currentToken);
-
-		// Move forward by the number of actual characters consumed
-		if (currentToken.starts_with("##"))
-			start += currentToken.length() - 2;
-		else
-			start += currentToken.length();
-	}
 
 	return tokens;
 }
 
-std::vector<int64_t> Tokenizer::ConvertToIds(
-	const std::vector<std::string>& a_Tokens)
+
+void Tokenizer::WordPieceTokenize(
+	const std::string& a_Word,
+	std::vector<std::string>& a_Output)
 {
-	std::vector<int64_t> tokenizedVector;
+	if (a_Word.empty())
+		return;
 
-	tokenizedVector.reserve(a_Tokens.size());
 
-	for (const auto& tokenString : a_Tokens)
+	if (a_Word.length() >
+		GugluuConstants::c_MaxTokenCharacters)
 	{
-		auto iterator = m_Vocabulary.find(tokenString);
-
-		GUGLUU_ASSERT(
-			iterator != m_Vocabulary.end(),
-			"Token does not exist in vocabulary: " << tokenString);
-
-		tokenizedVector.emplace_back(iterator->second);
+		a_Output.emplace_back("[UNK]");
+		return;
 	}
 
-	return tokenizedVector;
+	if (m_Vocabulary.find(a_Word)
+		!= m_Vocabulary.end())
+	{
+		a_Output.emplace_back(a_Word);
+		return;
+	}
+
+
+	size_t start = 0;
+
+
+	std::string candidate;
+
+	candidate.reserve(
+		GugluuConstants::c_MaxTokenCharacters + 2);
+
+
+	while (start < a_Word.length())
+	{
+		size_t end =
+			a_Word.length();
+
+		bool found = false;
+		while (start < end)
+		{
+			std::string_view piece =
+				std::string_view(
+					a_Word.data() + start,
+					end - start);
+
+
+			if (start == 0)
+			{
+				if (m_Vocabulary.find(piece)
+					!= m_Vocabulary.end())
+				{
+					a_Output.emplace_back(piece);
+
+					start = end;
+					found = true;
+
+					break;
+				}
+			}
+			else
+			{
+				candidate.clear();
+
+				candidate.append("##");
+				candidate.append(piece);
+
+
+				if (m_Vocabulary.find(candidate)
+					!= m_Vocabulary.end())
+				{
+					a_Output.emplace_back(
+						std::move(candidate));
+
+					candidate.clear();
+
+					start = end;
+					found = true;
+
+					break;
+				}
+			}
+
+
+			--end;
+		}
+
+
+		if (!found)
+		{
+			a_Output.emplace_back("[UNK]");
+			return;
+		}
+	}
 }
 
-TokenizedText Tokenizer::Chunker(
-	const std::vector<std::int64_t>& a_TokenIds)
+void Tokenizer::ChunkAndConvert(
+	const std::vector<std::string>& a_Tokens,
+	TokenizedText& a_Result)
 {
+	const std::size_t c_MaxSequenceLength =
+		GugluuConstants::c_MaxSequenceLength;
+
+	const std::size_t c_SpecialTokenCount =
+		GugluuConstants::c_SpecialTokenCount;
+
 	const std::size_t c_MaxContentLength =
-		GugluuConstants::c_MaxSequenceLength
-		- GugluuConstants::c_SpecialTokenCount;
+		c_MaxSequenceLength - c_SpecialTokenCount;
+
+	std::vector<std::int64_t> c_CurrentChunk;
+	c_CurrentChunk.reserve(c_MaxContentLength);
+
+	auto EmitChunk =
+		[&]()
+		{
+			if (c_CurrentChunk.empty())
+				return;
+
+			a_Result.InputIds.emplace_back(m_CLSId);
+			a_Result.AttentionMask.emplace_back(1);
+
+			for (const std::int64_t c_TokenId : c_CurrentChunk)
+			{
+				a_Result.InputIds.emplace_back(c_TokenId);
+				a_Result.AttentionMask.emplace_back(1);
+			}
+
+			a_Result.InputIds.emplace_back(m_SEPId);
+			a_Result.AttentionMask.emplace_back(1);
+
+			while (a_Result.InputIds.size()
+				% c_MaxSequenceLength != 0)
+			{
+				a_Result.InputIds.emplace_back(m_PADId);
+				a_Result.AttentionMask.emplace_back(0);
+			}
+
+			GUGLUU_ASSERT(
+				a_Result.InputIds.size()
+				== a_Result.AttentionMask.size(),
+				"Input IDs and attention mask have different sizes.");
+
+			c_CurrentChunk.clear();
+		};
+
+	auto AddToken =
+		[&](const std::int64_t a_TokenId)
+		{
+			if (c_CurrentChunk.size() >= c_MaxContentLength)
+				EmitChunk();
+
+			c_CurrentChunk.emplace_back(a_TokenId);
+		};
+
+
+	for (const std::string& c_Token : a_Tokens)
+	{
+		if (c_Token == "\n")
+		{
+			EmitChunk();
+			continue;
+		}
+
+		const std::int64_t c_TokenId =
+			GetTokenId(c_Token);
+
+		AddToken(c_TokenId);
+
+		// End the chunk at a sentence boundary.
+		if (c_Token == ".")
+		{
+			EmitChunk();
+		}
+	}
+
+	EmitChunk();
+}
+
+std::int64_t Tokenizer::GetTokenId(
+	std::string_view a_Token) const
+{
+	auto iterator =
+		m_Vocabulary.find(a_Token);
+
 
 	GUGLUU_ASSERT(
-		m_Vocabulary.contains("[CLS]")
-			&& m_Vocabulary.contains("[SEP]")
-			&& m_Vocabulary.contains("[PAD]"),
-		"The vocabulary is missing a required special token.");
+		iterator != m_Vocabulary.end(),
+		"Token does not exist in vocabulary: "
+		<< a_Token);
 
-	const std::int64_t c_ClsId = m_Vocabulary.at("[CLS]");
-	const std::int64_t c_SepId = m_Vocabulary.at("[SEP]");
-	const std::int64_t c_PadId = m_Vocabulary.at("[PAD]");
-	TokenizedText chunks;
 
-	for (std::size_t offset = 0;
-		offset == 0 || offset < a_TokenIds.size();
-		offset += c_MaxContentLength)
-	{
-		const std::size_t c_ContentLength = offset < a_TokenIds.size()
-			? std::min(c_MaxContentLength, a_TokenIds.size() - offset)
-			: 0;
-		chunks.m_InputIds.emplace_back(c_ClsId);
-		chunks.m_AttentionMask.emplace_back(1);
-		chunks.m_InputIds.insert(
-			chunks.m_InputIds.end(),
-			a_TokenIds.begin() + offset,
-			a_TokenIds.begin() + offset + c_ContentLength);
-		chunks.m_AttentionMask.insert(
-			chunks.m_AttentionMask.end(), c_ContentLength, 1);
-		chunks.m_InputIds.emplace_back(c_SepId);
-		chunks.m_AttentionMask.emplace_back(1);
-
-		const std::size_t c_PaddingLength =
-			GugluuConstants::c_MaxSequenceLength
-			- c_ContentLength - GugluuConstants::c_SpecialTokenCount;
-		chunks.m_InputIds.insert(
-			chunks.m_InputIds.end(), c_PaddingLength, c_PadId);
-		chunks.m_AttentionMask.insert(
-			chunks.m_AttentionMask.end(), c_PaddingLength, 0);
-	}
-
-	return chunks;
+	return iterator->second;
 }
 
-TokenizedText Tokenizer::Tokenize(const std::string& a_InputString)
+
+TokenizedText Tokenizer::s_Tokenize(
+	const std::string& a_InputString)
 {
-	static Tokenizer s_Tokenizer(UtilsGugluu::ResourcePath(
-		GugluuConstants::c_VocabularyFilePath));
-	return s_Tokenizer.TokenizeText(a_InputString);
+	static Tokenizer s_Tokenizer(
+		UtilsGugluu::ResourcePath(
+			GugluuConstants::c_VocabularyFilePath));
+
+
+	std::string input =
+		a_InputString;
+
+	return s_Tokenizer.TokenizeText(
+		input);
 }

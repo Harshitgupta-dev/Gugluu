@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Gugluu/src/pch.h"
+#include "Gugluu/src/core/pch.h"
 
 class ONNX
 {
 public:
-	static std::vector<float> RunModel(const TokenizedText& a_TokenizedText);
+	static std::vector<float> s_RunModel(const TokenizedText& a_TokenizedText);
 
 private:
 	ONNX();

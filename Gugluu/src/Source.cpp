@@ -1,39 +1,103 @@
-#include "Gugluu/src/pch.h"
-#include "Gugluu/src/DataLoader.h"
-#include "Gugluu/src/Embedding.h"
-#include "Gugluu/src/ui.h"
+#include "Gugluu/src/core/pch.h"
+#include "Gugluu/src/Embedding/Embedding.h"
+#include "Gugluu/src/FileEmbeddings/DataLoader.h"
+#include "Gugluu/src/SimilarityModel/FAISS.h"
+#include "Gugluu/src/Tokenizer/Tokenizer.h"
+#include "Gugluu/src/FileEmbeddings/FileRanker.h"
 
-#include <chrono>
-
-int main(int a_ArgumentCount, char* a_Arguments[])
+namespace
 {
+	constexpr std::size_t c_TopMatchedChunks = 500;
+	constexpr std::size_t c_TopFilesToPrint = 10;
+}
+
+int main()
+{
+	Log::s_Init();
 	try
 	{
-		if (a_ArgumentCount > 2)
-			throw std::invalid_argument(
-				"Usage: Gugluu [directory-to-index]");
+		DataLoader::s_Bind(
+			[](const std::vector<float>& a_Embeddings)
+			{
+				FAISS::s_Initialize(a_Embeddings);
+			},
 
-		const std::filesystem::path c_RootDirectory = a_ArgumentCount == 2
-			? std::filesystem::path(a_Arguments[1])
-			: GugluuUI::PromptForDirectory();
-		const std::string c_Query = GugluuUI::PromptForSearchQuery();
-		const auto c_StartTime = std::chrono::steady_clock::now();
+			[](const TokenizedText& a_Tokenized)
+			{
+				return CreateEmbeddings(a_Tokenized);
+			},
 
-		PRINT("Indexing files...");
-		const auto& c_Records = DataLoader::GetData(c_RootDirectory);
-		const std::vector<float> c_QueryEmbedding = CreateEmbedding(c_Query);
-		const auto c_Matches =
-			Gugluu::CalculateSimilarity(c_Records, c_QueryEmbedding);
-		GugluuUI::DisplayResults(c_Matches, c_Records.size());
+			[](const std::string& a_InputString)
+			{
+				return Tokenizer::s_Tokenize(a_InputString);
+			}
+		);
 
-		const auto c_Elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-			std::chrono::steady_clock::now() - c_StartTime);
-		PRINT("Completed in " << c_Elapsed.count() << " ms.");
-		return EXIT_SUCCESS;
+		std::cout << "Directory to index: ";
+		std::string directory;
+		if (!std::getline(std::cin, directory) || directory.empty())
+		{
+			LOG_ERROR("A directory path is required.");
+			return 1;
+		}
+
+		std::error_code directoryError;
+		if (!std::filesystem::is_directory(directory, directoryError))
+		{
+			LOG_ERROR(
+				"The indexing path is not a readable directory: {}{}",
+				directory,
+				directoryError ? " (" + directoryError.message() + ")" : "");
+			return 1;
+		}
+
+		const DataLoader::Data fileData =
+			DataLoader::s_GetData(std::filesystem::path(directory));
+
+		std::string query;
+		while (true)
+		{
+			std::cout << "Search query (or 'exit' to quit): ";
+			if (!std::getline(std::cin, query) || query == "exit")
+				break;
+			if (query.empty())
+				continue;
+
+			const TokenizedText tokenizedQuery = Tokenizer::s_Tokenize(query);
+			if (tokenizedQuery.InputIds.empty())
+			{
+				LOG_WARN("The query contains no searchable text.");
+				continue;
+			}
+
+			const std::vector<float> queryEmbedding =
+				CreateEmbeddings(tokenizedQuery);
+			const auto chunkMatches = FAISS::s_GetSimilarityMap(
+				queryEmbedding,
+				c_TopMatchedChunks
+			);
+			const std::vector<FileRanker::RankedFile> rankedFiles =
+				FileRanker::s_Rank(fileData, chunkMatches);
+
+			std::cout << "Top matching files:\n";
+			const std::size_t filesToPrint =
+				(std::min)(c_TopFilesToPrint, rankedFiles.size());
+
+			for (std::size_t i = 0; i < filesToPrint; ++i)
+			{
+				std::cout << i + 1 << ". "
+					<< rankedFiles[i].record->GetPath().string()
+					<< " (similarity rank: "
+					<< std::fixed << std::setprecision(4)
+					<< rankedFiles[i].similarityRank << ")\n";
+			}
+		}
 	}
 	catch (const std::exception& exception)
 	{
-		std::cerr << "Gugluu error: " << exception.what() << '\n';
-		return EXIT_FAILURE;
+		LOG_ERROR("Gugluu failed: {}", exception.what());
+		return 1;
 	}
+
+	return 0;
 }
