@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 """Prepare Gugluu's pinned dependencies and generate a Premake project."""
 
 from __future__ import annotations
@@ -703,7 +703,7 @@ def find_premake() -> list[str]:
 	for candidate in (shutil.which("premake5"), shutil.which("premake")):
 		if candidate:
 			return [candidate]
-	local = ROOT / "vendor" / "bin" / executable_name
+	local = ROOT / "Vendor" / "Bin" / "Premake" / executable_name
 	if not local.is_file():
 		filename, _ = premake_archive()
 		url = f"https://github.com/premake/premake-core/releases/download/v{PREMAKE_VERSION}/{filename}"

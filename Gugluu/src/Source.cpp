@@ -57,11 +57,10 @@ int main()
 		std::string query;
 		while (true)
 		{
-			std::cout << "Search query (or 'exit' to quit): ";
-			if (!std::getline(std::cin, query) || query == "exit")
-				break;
+			std::cout << "Search query (leave blank to quit): ";
+			std::getline(std::cin, query);
 			if (query.empty())
-				continue;
+				break;
 
 			const TokenizedText tokenizedQuery = Tokenizer::s_Tokenize(query);
 			if (tokenizedQuery.InputIds.empty())

@@ -31,7 +31,7 @@ Gugluu
 ├── AllowedFileTypes.txt
 ├── premake5.lua
 │
-└── vendor/bin/premake 
+└── Vendor/Bin/Premake/
 ```
 The setup script downloads and SHA-256 verifies:
 
@@ -114,7 +114,7 @@ Gugluu is a local semantic file-search application written in C++20. It creates 
 - Python 3.8 or newer available as `python` on `PATH` (the setup script uses only the standard library)
 - Internet access the first time dependencies need to be restored
 
-Premake 5 and its `vs2026` generator are included in `vendor/bin/premake`.
+Premake 5 and its `vs2026` generator are included in `Vendor/Bin/Premake` alongside the Premake license.
 
 ## Generate and build
 
